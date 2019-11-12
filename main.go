@@ -74,6 +74,12 @@ func NewExporter(dbEnvs []*dbEnvironment, metrics []Metric) *Exporter {
 		env.db.SetMaxIdleConns(0)
 		env.db.SetMaxOpenConns(10)
 	}
+
+	// adding env label to all metrics
+	for _, metric := range metrics {
+		metric.Labels = append(metric.Labels, "env")
+	}
+
 	return &Exporter{
 		metricsToScrap: metrics,
 		duration: prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -219,7 +225,6 @@ func ScrapeGenericValues(env string, db *sql.DB, ch chan<- prometheus.Metric, co
 	metricsDesc map[string]string, metricsType map[string]string, fieldToAppend string, ignoreZeroResult bool, request string) error {
 	log.Debugln("scrape generic values")
 	var metricsCount int
-	labels = append(labels, "env")
 	genericParser := func(row map[string]string) error {
 		// Construct labels value
 		labelsValues := []string{}
