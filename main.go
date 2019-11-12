@@ -97,7 +97,7 @@ func NewExporter(dbEnvs []*dbEnvironment) *Exporter {
 			Subsystem: exporter,
 			Name:      "last_scrape_error",
 			Help:      "Whether the last scrape of metrics from Oracle DB resulted in an error (1 for error, 0 for success).",
-		}, []string{"collector", "env"}),
+		}, []string{"env"}),
 		up: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Name:      "up",
@@ -139,11 +139,11 @@ func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
 func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 	for _, env := range e.dbEnvs {
 		e.scrapeEnv(env, ch)
-		e.duration.Collect(ch)
-		e.totalScrapes.Collect(ch)
-		e.err.Collect(ch)
-		e.scrapeErrors.Collect(ch)
-		e.up.Collect(ch)
+		//		e.duration.Collect(ch)
+		//		e.totalScrapes.Collect(ch)
+		//		e.err.Collect(ch)
+		//		e.scrapeErrors.Collect(ch)
+		//		e.up.Collect(ch)
 	}
 }
 
@@ -171,9 +171,8 @@ func (e *Exporter) scrapeEnv(env *dbEnvironment, ch chan<- prometheus.Metric) {
 		env.db.Close()
 		e.up.WithLabelValues(env.name).Set(0)
 		return
-	} else {
-		e.up.WithLabelValues(env.name).Set(1)
 	}
+	e.up.WithLabelValues(env.name).Set(1)
 
 	for _, metric := range e.metricsToScrap {
 		if err = ScrapeMetric(env.name, env.db, ch, metric); err != nil {
