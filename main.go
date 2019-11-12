@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"flag"
 	"net/http"
 	"os"
 	"strconv"
@@ -19,6 +18,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/log"
+	"gopkg.in/alecthomas/kingpin.v2"
 	//Required for debugging
 	//_ "net/http/pprof"
 )
@@ -26,13 +26,13 @@ import (
 var (
 	// Version will be set at build time.
 	Version            = "0.0.0.dev"
-	listenAddress      = flag.String("web.listen-address", ":9161", "Address to listen on for web interface and telemetry.")
-	metricPath         = flag.String("web.telemetry-path", "/metrics", "Path under which to expose metrics.")
+	app                = kingpin.New("oracle exporter", "A oracle metrics exporter")
+	listenAddress      = app.Flag("web.listen-address", "Address to listen on for web interface and telemetry.").Default(":9161").String()
+	metricPath         = app.Flag("web.telemetry-path", "Path under which to expose metrics.").Default("/metrics").String()
 	landingPage        = []byte("<html><head><title>Oracle DB Exporter " + Version + "</title></head><body><h1>Oracle DB Exporter " + Version + "</h1><p><a href='" + *metricPath + "'>Metrics</a></p></body></html>")
-	defaultFileMetrics = flag.String("default.metrics", "default-metrics.toml", "File with default metrics in a TOML file.")
-	customMetrics      = flag.String("custom.metrics", os.Getenv("CUSTOM_METRICS"), "File that may contain various custom metrics in a TOML file.")
-	queryTimeout       = flag.String("query.timeout", "5", "Query timeout (in seconds).")
-	version            = flag.Bool("version", false, "Prints the Version.")
+	defaultFileMetrics = app.Flag("default.metrics", "File with default metrics in a TOML file.").Default("default-metrics.toml").String()
+	customMetrics      = app.Flag("custom.metrics", "File that may contain various custom metrics in a TOML file.").Envar("CUSTOM_METRICS").String()
+	queryTimeout       = app.Flag("query.timeout", "Query timeout (in seconds).").Default("5").Int()
 )
 
 // Metric name parts.
@@ -237,6 +237,7 @@ func ScrapeGenericValues(env string, db *sql.DB, ch chan<- prometheus.Metric, co
 					metricHelp,
 					labels, nil,
 				)
+				log.Debugf("adding generic metric: %s", desc)
 				ch <- prometheus.MustNewConstMetric(desc, GetMetricType(metric, metricsType), value, labelsValues...)
 			} else {
 				desc := prometheus.NewDesc(
@@ -244,6 +245,7 @@ func ScrapeGenericValues(env string, db *sql.DB, ch chan<- prometheus.Metric, co
 					metricHelp,
 					labels, nil,
 				)
+				log.Debugf("adding generic metric: %s", desc)
 				ch <- prometheus.MustNewConstMetric(desc, GetMetricType(metric, metricsType), value, labelsValues...)
 			}
 			metricsCount++
@@ -265,11 +267,7 @@ func ScrapeGenericValues(env string, db *sql.DB, ch chan<- prometheus.Metric, co
 func GeneratePrometheusMetrics(db *sql.DB, parse func(row map[string]string) error, query string) error {
 
 	// Add a timeout
-	timeout, err := strconv.Atoi(*queryTimeout)
-	if err != nil {
-		log.Fatalf("error while converting timeout option value: %s with err: %s", *queryTimeout, err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*queryTimeout)*time.Second)
 	defer cancel()
 	rows, err := db.QueryContext(ctx, query)
 
@@ -347,11 +345,9 @@ func parseDSN(s string) ([]*dbEnvironment, error) {
 }
 
 func main() {
-	flag.Parse()
-	if *version == true {
-		fmt.Printf("version: %s\n", Version)
-		return
-	}
+	app.Version(Version)
+	log.AddFlags(app)
+	app.Parse(os.Args[1:])
 	log.Infoln("starting oracledb_exporter " + Version)
 	dsn := os.Getenv("DATA_SOURCE_NAME")
 	dbEnvs, err := parseDSN(dsn)
