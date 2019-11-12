@@ -68,8 +68,7 @@ func NewExporter(dbEnvs []*dbEnvironment) *Exporter {
 	for _, env := range dbEnvs {
 		db, err := sql.Open("oci8", env.dsn)
 		if err != nil {
-			log.Errorln("unable to connect to: ", env.dsn)
-			panic(err)
+			log.Fatalf("unable to connect to: %s, failed with: %s", env.dsn, err)
 		}
 		db.SetMaxIdleConns(0)
 		db.SetMaxOpenConns(10)
@@ -197,7 +196,7 @@ func GetMetricType(metricType string, metricsType map[string]string) prometheus.
 	}
 	valueType, ok := strToPromType[strings.ToLower(strType)]
 	if !ok {
-		panic(errors.New("error while getting prometheus type " + strings.ToLower(strType)))
+		log.Fatalf("failed getting prometheus type from str type: %s", strings.ToLower(strType))
 	}
 	return valueType
 }
@@ -266,8 +265,7 @@ func GeneratePrometheusMetrics(db *sql.DB, parse func(row map[string]string) err
 	// Add a timeout
 	timeout, err := strconv.Atoi(*queryTimeout)
 	if err != nil {
-		log.Fatal("error while converting timeout option value: ", err)
-		panic(err)
+		log.Fatalf("error while converting timeout option value: %s with err: %s", *queryTimeout, err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 	defer cancel()
@@ -340,6 +338,7 @@ func parseDSN(s string) ([]*dbEnvironment, error) {
 			return nil, fmt.Errorf("unable to get oracle SID from data source environment: %s", env)
 		}
 		oracleSID := parts[len(parts)-1]
+		log.Infof("found oracle SID: %s in connection string: %s", oracleSID, env)
 		dbEnvs = append(dbEnvs, &dbEnvironment{name: oracleSID, dsn: env})
 	}
 	return dbEnvs, nil
@@ -354,21 +353,21 @@ func main() {
 	log.Infoln("starting oracledb_exporter " + Version)
 	dsn := os.Getenv("DATA_SOURCE_NAME")
 	dbEnvs, err := parseDSN(dsn)
-	log.Fatalln(err)
+	if err != nil {
+		log.Fatalln(err)
+	}
 
 	// Load default metrics
 	var metrics struct{ Metric []Metric }
 	if _, err := toml.DecodeFile(*defaultFileMetrics, &metrics); err != nil {
-		log.Errorln(err)
-		panic(errors.New("error while loading " + *defaultFileMetrics))
+		log.Fatalf("failed loading default metrics: %s with: %s", *defaultFileMetrics, err)
 	}
 
 	// If custom metrics, load it
 	var addMetrics struct{ Metric []Metric }
 	if strings.Compare(*customMetrics, "") != 0 {
 		if _, err := toml.DecodeFile(*customMetrics, &addMetrics); err != nil {
-			log.Errorln(err)
-			panic(errors.New("error while loading " + *customMetrics))
+			log.Fatalf("failed loading custom metrics: %s with: %s", *customMetrics, err)
 		}
 		metrics.Metric = append(metrics.Metric, addMetrics.Metric...)
 	}
