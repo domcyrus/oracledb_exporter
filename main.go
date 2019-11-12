@@ -161,14 +161,14 @@ func (e *Exporter) scrapeEnv(env *dbEnvironment, ch chan<- prometheus.Metric) {
 	}(time.Now())
 	if err = env.db.Ping(); err != nil {
 		if strings.Contains(err.Error(), "sql: database is closed") {
-			log.Infoln("reconnecting to DB")
+			log.Infof("reconnecting to DB SID: %s", env.name)
 			env.db, err = sql.Open("oci8", env.dsn)
 			env.db.SetMaxIdleConns(0)
 			env.db.SetMaxOpenConns(10)
 		}
 	}
 	if err = env.db.Ping(); err != nil {
-		log.Errorf("pinging oracle failed SID: %s connection string: %s, with error: %s", err)
+		log.Errorf("pinging oracle failed SID: %s connection string: %s, with error: %s", env.name, env.dsn, err)
 		env.db.Close()
 		e.up.WithLabelValues(env.name).Set(0)
 		return
