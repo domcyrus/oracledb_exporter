@@ -178,6 +178,7 @@ func (e *Exporter) scrapeEnv(env *dbEnvironment, ch chan<- prometheus.Metric) {
 	e.up.WithLabelValues(env.name).Set(1)
 
 	for _, metric := range e.metricsToScrap {
+		log.Debugf("scrape metric: %s", metric.Context)
 		if err = ScrapeMetric(env.name, env.db, ch, metric); err != nil {
 			log.Errorln("error scraping for", metric.Context, ":", err)
 			e.scrapeErrors.WithLabelValues(metric.Context).Inc()
@@ -205,6 +206,7 @@ func GetMetricType(metricType string, metricsType map[string]string) prometheus.
 
 // ScrapeMetric interface method to call ScrapeGenericValues using Metric struct values
 func ScrapeMetric(env string, db *sql.DB, ch chan<- prometheus.Metric, metricDefinition Metric) error {
+	log.Debugln("scrape metric")
 	return ScrapeGenericValues(env, db, ch, metricDefinition.Context, metricDefinition.Labels,
 		metricDefinition.MetricsDesc, metricDefinition.MetricsType,
 		metricDefinition.FieldToAppend, metricDefinition.IgnoreZeroResult,
@@ -213,6 +215,7 @@ func ScrapeMetric(env string, db *sql.DB, ch chan<- prometheus.Metric, metricDef
 
 // ScrapeGenericValues generic method for retrieving metrics.
 func ScrapeGenericValues(env string, db *sql.DB, ch chan<- prometheus.Metric, context string, labels []string,
+	log.Debugln("scrape generic values")
 	metricsDesc map[string]string, metricsType map[string]string, fieldToAppend string, ignoreZeroResult bool, request string) error {
 	metricsCount := 0
 	genericParser := func(row map[string]string) error {
