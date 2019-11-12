@@ -140,11 +140,11 @@ func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
 func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 	for _, env := range e.dbEnvs {
 		e.scrapeEnv(env, ch)
-		//		e.duration.Collect(ch)
-		//		e.totalScrapes.Collect(ch)
-		//		e.err.Collect(ch)
-		//		e.scrapeErrors.Collect(ch)
-		//		e.up.Collect(ch)
+		e.duration.Collect(ch)
+		e.totalScrapes.Collect(ch)
+		e.err.Collect(ch)
+		e.scrapeErrors.Collect(ch)
+		e.up.Collect(ch)
 	}
 }
 
