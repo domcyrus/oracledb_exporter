@@ -127,7 +127,7 @@ func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
 
 	go func() {
 		for m := range metricCh {
-			log.Infof("metric found: %v", m)
+			log.Infof("registering metric: %s", m.Desc())
 			ch <- m.Desc()
 		}
 		close(doneCh)
