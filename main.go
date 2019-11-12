@@ -354,7 +354,7 @@ func main() {
 	log.Infoln("starting oracledb_exporter " + Version)
 	dsn := os.Getenv("DATA_SOURCE_NAME")
 	dbEnvs, err := parseDSN(dsn)
-	log.Errorln(err)
+	log.Fatalln(err)
 
 	// Load default metrics
 	var metrics struct{ Metric []Metric }
