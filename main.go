@@ -219,13 +219,13 @@ func ScrapeGenericValues(env string, db *sql.DB, ch chan<- prometheus.Metric, co
 	metricsDesc map[string]string, metricsType map[string]string, fieldToAppend string, ignoreZeroResult bool, request string) error {
 	log.Debugln("scrape generic values")
 	var metricsCount int
+	labels = append(labels, "env")
 	genericParser := func(row map[string]string) error {
 		// Construct labels value
 		labelsValues := []string{}
 		for _, label := range labels {
 			labelsValues = append(labelsValues, row[label])
 		}
-		labels = append(labels, "env")
 		labelsValues = append(labelsValues, env)
 		// Construct Prometheus values to sent back
 		for metric, metricHelp := range metricsDesc {
