@@ -74,7 +74,7 @@ func NewExporter(dbEnvs []*dbEnvironment) *Exporter {
 		env.db.SetMaxIdleConns(0)
 		env.db.SetMaxOpenConns(10)
 	}
-	return &Exporter{
+	exp := &Exporter{
 		duration: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: exporter,
@@ -106,6 +106,12 @@ func NewExporter(dbEnvs []*dbEnvironment) *Exporter {
 		}, []string{"env"}),
 		dbEnvs: dbEnvs,
 	}
+	prometheus.MustRegister(exp.duration)
+	prometheus.MustRegister(exp.totalScrapes)
+	prometheus.MustRegister(exp.scrapeErrors)
+	prometheus.MustRegister(exp.err)
+	prometheus.MustRegister(exp.up)
+	return exp
 }
 
 // Describe describes all the metrics exported by the SQL exporter.
