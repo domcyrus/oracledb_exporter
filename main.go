@@ -228,9 +228,10 @@ func ScrapeGenericValues(env string, db *sql.DB, ch chan<- prometheus.Metric, co
 	genericParser := func(row map[string]string) error {
 		// Construct labels value
 		labelsValues := []string{}
-		for _, label := range labels {
+		for _, label := range labels[:len(labels)-1] {
 			labelsValues = append(labelsValues, row[label])
 		}
+		// adding env as the last label
 		labelsValues = append(labelsValues, env)
 		// Construct Prometheus values to sent back
 		for metric, metricHelp := range metricsDesc {
