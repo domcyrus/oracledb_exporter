@@ -215,9 +215,9 @@ func ScrapeMetric(env string, db *sql.DB, ch chan<- prometheus.Metric, metricDef
 
 // ScrapeGenericValues generic method for retrieving metrics.
 func ScrapeGenericValues(env string, db *sql.DB, ch chan<- prometheus.Metric, context string, labels []string,
-	log.Debugln("scrape generic values")
 	metricsDesc map[string]string, metricsType map[string]string, fieldToAppend string, ignoreZeroResult bool, request string) error {
-	metricsCount := 0
+	log.Debugln("scrape generic values")
+	var metricsCount int
 	genericParser := func(row map[string]string) error {
 		// Construct labels value
 		labelsValues := []string{}
