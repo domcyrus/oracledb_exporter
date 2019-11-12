@@ -71,8 +71,8 @@ func NewExporter(dbEnvs []*dbEnvironment) *Exporter {
 		if err != nil {
 			log.Fatalf("unable to connect to: %s, failed with: %s", env.dsn, err)
 		}
-		db.SetMaxIdleConns(0)
-		db.SetMaxOpenConns(10)
+		env.db.SetMaxIdleConns(0)
+		env.db.SetMaxOpenConns(10)
 	}
 	return &Exporter{
 		duration: prometheus.NewGaugeVec(prometheus.GaugeOpts{
