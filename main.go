@@ -64,7 +64,7 @@ type Exporter struct {
 }
 
 // NewExporter returns a new Oracle DB exporter for the provided DSN.
-func NewExporter(dbEnvs []*dbEnvironment) *Exporter {
+func NewExporter(dbEnvs []*dbEnvironment, metrics []Metric) *Exporter {
 	for _, env := range dbEnvs {
 		var err error
 		env.db, err = sql.Open("oci8", env.dsn)
@@ -75,6 +75,7 @@ func NewExporter(dbEnvs []*dbEnvironment) *Exporter {
 		env.db.SetMaxOpenConns(10)
 	}
 	return &Exporter{
+		metricsToScrap: metrics,
 		duration: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: exporter,
@@ -127,7 +128,7 @@ func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
 
 	go func() {
 		for m := range metricCh {
-			log.Infof("registering metric: %s", m.Desc())
+			log.Debugf("registering metric: %s", m.Desc())
 			ch <- m.Desc()
 		}
 		close(doneCh)
@@ -372,7 +373,7 @@ func main() {
 		}
 		metrics.Metric = append(metrics.Metric, addMetrics.Metric...)
 	}
-	exporter := NewExporter(dbEnvs)
+	exporter := NewExporter(dbEnvs, metrics.Metric)
 	prometheus.MustRegister(exporter)
 	http.Handle(*metricPath, promhttp.Handler())
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
