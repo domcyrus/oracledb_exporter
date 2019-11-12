@@ -66,7 +66,8 @@ type Exporter struct {
 // NewExporter returns a new Oracle DB exporter for the provided DSN.
 func NewExporter(dbEnvs []*dbEnvironment) *Exporter {
 	for _, env := range dbEnvs {
-		env.db, err := sql.Open("oci8", env.dsn)
+		var err error
+		env.db, err = sql.Open("oci8", env.dsn)
 		if err != nil {
 			log.Fatalf("unable to connect to: %s, failed with: %s", env.dsn, err)
 		}
