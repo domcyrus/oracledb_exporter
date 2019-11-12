@@ -55,7 +55,7 @@ type Metric struct {
 // Exporter collects Oracle DB metrics. It implements prometheus.Collector.
 type Exporter struct {
 	dbEnvs         []*dbEnvironment
-	metricsToScrap []Metric
+	metricsToScrap []*Metric
 	duration       *prometheus.GaugeVec
 	err            *prometheus.GaugeVec
 	totalScrapes   *prometheus.CounterVec
@@ -64,7 +64,7 @@ type Exporter struct {
 }
 
 // NewExporter returns a new Oracle DB exporter for the provided DSN.
-func NewExporter(dbEnvs []*dbEnvironment, metrics []Metric) *Exporter {
+func NewExporter(dbEnvs []*dbEnvironment, metrics []*Metric) *Exporter {
 	for _, env := range dbEnvs {
 		var err error
 		env.db, err = sql.Open("oci8", env.dsn)
@@ -212,7 +212,7 @@ func GetMetricType(metricType string, metricsType map[string]string) prometheus.
 }
 
 // ScrapeMetric interface method to call ScrapeGenericValues using Metric struct values
-func ScrapeMetric(env string, db *sql.DB, ch chan<- prometheus.Metric, metricDefinition Metric) error {
+func ScrapeMetric(env string, db *sql.DB, ch chan<- prometheus.Metric, metricDefinition *Metric) error {
 	log.Debugln("scrape metric")
 	return ScrapeGenericValues(env, db, ch, metricDefinition.Context, metricDefinition.Labels,
 		metricDefinition.MetricsDesc, metricDefinition.MetricsType,
@@ -365,13 +365,13 @@ func main() {
 	}
 
 	// Load default metrics
-	var metrics struct{ Metric []Metric }
+	var metrics struct{ Metric []*Metric }
 	if _, err := toml.DecodeFile(*defaultFileMetrics, &metrics); err != nil {
 		log.Fatalf("failed loading default metrics: %s with: %s", *defaultFileMetrics, err)
 	}
 
 	// If custom metrics, load it
-	var addMetrics struct{ Metric []Metric }
+	var addMetrics struct{ Metric []*Metric }
 	if strings.Compare(*customMetrics, "") != 0 {
 		if _, err := toml.DecodeFile(*customMetrics, &addMetrics); err != nil {
 			log.Fatalf("failed loading custom metrics: %s with: %s", *customMetrics, err)
