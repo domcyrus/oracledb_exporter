@@ -168,7 +168,7 @@ func (e *Exporter) scrapeEnv(env *dbEnvironment, ch chan<- prometheus.Metric) {
 		}
 	}
 	if err = env.db.Ping(); err != nil {
-		log.Errorln("error pinging oracle:", err)
+		log.Errorf("pinging oracle failed SID: %s connection string: %s, with error: %s", err)
 		env.db.Close()
 		e.up.WithLabelValues(env.name).Set(0)
 		return
