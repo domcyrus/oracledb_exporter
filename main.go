@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -71,8 +72,11 @@ func NewExporter(dbEnvs []*dbEnvironment, metrics []*Metric) *Exporter {
 		if err != nil {
 			log.Fatalf("unable to connect to: %s, failed with: %s", env.dsn, err)
 		}
-		env.db.SetMaxIdleConns(0)
-		env.db.SetMaxOpenConns(10)
+		// By design exporter should use maximum one connection per request.
+		env.db.SetMaxOpenConns(1)
+		env.db.SetMaxIdleConns(1)
+		// Set max lifetime for a connection.
+		env.db.SetConnMaxLifetime(1 * time.Minute)
 	}
 
 	// adding env label to all metrics
@@ -147,9 +151,12 @@ func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
 
 // Collect implements prometheus.Collector.
 func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
+	var wg sync.WaitGroup
 	for _, env := range e.dbEnvs {
-		e.scrapeEnv(env, ch)
+		wg.Add(1)
+		go e.scrapeEnv(env, ch, &wg)
 	}
+	wg.Wait()
 	e.duration.Collect(ch)
 	e.totalScrapes.Collect(ch)
 	e.err.Collect(ch)
@@ -157,7 +164,7 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 	e.up.Collect(ch)
 }
 
-func (e *Exporter) scrapeEnv(env *dbEnvironment, ch chan<- prometheus.Metric) {
+func (e *Exporter) scrapeEnv(env *dbEnvironment, ch chan<- prometheus.Metric, wg *sync.WaitGroup) {
 	e.totalScrapes.WithLabelValues(env.name).Inc()
 	var err error
 	defer func(start time.Time) {
@@ -167,23 +174,30 @@ func (e *Exporter) scrapeEnv(env *dbEnvironment, ch chan<- prometheus.Metric) {
 		} else {
 			e.err.WithLabelValues(env.name).Set(1)
 		}
+		wg.Done()
 	}(time.Now())
+
 	if err = env.db.Ping(); err != nil {
 		if strings.Contains(err.Error(), "sql: database is closed") {
 			log.Infof("reconnecting to DB SID: %s", env.name)
 			env.db, err = sql.Open("oci8", env.dsn)
-			env.db.SetMaxIdleConns(0)
-			env.db.SetMaxOpenConns(10)
+
+			// By design exporter should use maximum one connection per request.
+			env.db.SetMaxOpenConns(1)
+			env.db.SetMaxIdleConns(1)
+			// Set max lifetime for a connection.
+			env.db.SetConnMaxLifetime(1 * time.Minute)
+
+			if err != nil {
+				log.Errorf("pinging oracle failed SID: %s connection string: %s, with error: %s", env.name, env.dsn, err)
+				env.db.Close()
+				e.up.WithLabelValues(env.name).Set(0)
+				return
+			}
 		}
 	}
-	if err = env.db.Ping(); err != nil {
-		log.Errorf("pinging oracle failed SID: %s connection string: %s, with error: %s", env.name, env.dsn, err)
-		env.db.Close()
-		e.up.WithLabelValues(env.name).Set(0)
-		return
-	}
-	e.up.WithLabelValues(env.name).Set(1)
 
+	e.up.WithLabelValues(env.name).Set(1)
 	for _, metric := range e.metricsToScrap {
 		log.Debugf("scrape metric: %s", metric.Context)
 		if err = ScrapeMetric(env.name, env.db, ch, metric); err != nil {
@@ -319,7 +333,6 @@ func GeneratePrometheusMetrics(db *sql.DB, parse func(row map[string]string) err
 	}
 
 	return nil
-
 }
 
 // Oracle gives us some ugly names back. This function cleans things up for Prometheus.
