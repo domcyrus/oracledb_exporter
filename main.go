@@ -33,6 +33,7 @@ var (
 	landingPage        = []byte("<html><head><title>Oracle DB Exporter " + Version + "</title></head><body><h1>Oracle DB Exporter " + Version + "</h1><p><a href='" + *metricPath + "'>Metrics</a></p></body></html>")
 	defaultFileMetrics = app.Flag("default.metrics", "File with default metrics in a TOML file.").Default("default-metrics.toml").String()
 	customMetrics      = app.Flag("custom.metrics", "File that may contain various custom metrics in a TOML file.").Envar("CUSTOM_METRICS").String()
+	dataSourceNames    = app.Flag("dsn", "The data source names (DSNs) comma separated strings like: system/blabla@docker.for.mac.localhost:1521/DINTDB").Envar("DATA_SOURCE_NAME").String()
 	queryTimeout       = app.Flag("query.timeout", "Query timeout (in seconds).").Default("5").Int()
 )
 
@@ -372,8 +373,7 @@ func main() {
 	log.AddFlags(app)
 	app.Parse(os.Args[1:])
 	log.Infoln("starting oracledb_exporter " + Version)
-	dsn := os.Getenv("DATA_SOURCE_NAME")
-	dbEnvs, err := parseDSN(dsn)
+	dbEnvs, err := parseDSN(*dataSourceNames)
 	if err != nil {
 		log.Fatalln(err)
 	}
