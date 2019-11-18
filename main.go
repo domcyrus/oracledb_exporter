@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -12,16 +13,15 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/ssm"
+
 	_ "github.com/mattn/go-oci8"
-
-	"fmt"
-
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/log"
 	"gopkg.in/alecthomas/kingpin.v2"
-	//Required for debugging
-	//_ "net/http/pprof"
 )
 
 var (
@@ -33,8 +33,18 @@ var (
 	landingPage        = []byte("<html><head><title>Oracle DB Exporter " + Version + "</title></head><body><h1>Oracle DB Exporter " + Version + "</h1><p><a href='" + *metricPath + "'>Metrics</a></p></body></html>")
 	defaultFileMetrics = app.Flag("default.metrics", "File with default metrics in a TOML file.").Default("default-metrics.toml").String()
 	customMetrics      = app.Flag("custom.metrics", "File that may contain various custom metrics in a TOML file.").Envar("CUSTOM_METRICS").String()
-	dataSourceNames    = app.Flag("dsn", "The data source names (DSNs) comma separated strings like: system/blabla@docker.for.mac.localhost:1521/DINTDB").Envar("DATA_SOURCE_NAME").String()
-	queryTimeout       = app.Flag("query.timeout", "Query timeout (in seconds).").Default("5").Int()
+
+	dataSourceNames = app.Flag("dsn", "The data source names (DSNs) comma separated strings like: system/blabla@docker.for.mac.localhost:1521/DINTDB. Only use it if you don't use SSM parameters.").Envar("DATA_SOURCE_NAME").String()
+
+	// aws ssm related flags
+	awsRegion   = app.Flag("aws.region", "The aws region to use").Default("eu-central-1").String()
+	ssmUser     = app.Flag("ssm.user", "The ssm parameter to get the oracle user").Default("/shared-db/monitoring-user").String()
+	ssmPassword = app.Flag("ssm.password", "The ssm parameter to get the oracle password").Default("/shared-db/monitoring-password").String()
+	ssmPort     = app.Flag("ssm.port", "The ssm parameter to get the oracle port").Default("/shared-db/port").String()
+	ssmSIDs     = app.Flag("ssm.sids", "The ssm parameter to get the oracle sids comma separated list").Default("/shared-db/sids").String()
+	ssmHost     = app.Flag("ssm.host", "The ssm parameter to get the oracle host").Default("/shared-db/host").String()
+
+	queryTimeout = app.Flag("query.timeout", "Query timeout (in seconds).").Default("5").Int()
 )
 
 // Metric name parts.
@@ -82,7 +92,7 @@ func NewExporter(dbEnvs []*dbEnvironment, metrics []*Metric) *Exporter {
 
 	// adding env label to all metrics
 	for _, metric := range metrics {
-		metric.Labels = append(metric.Labels, "env")
+		metric.Labels = append(metric.Labels, "sid")
 	}
 
 	return &Exporter{
@@ -92,30 +102,30 @@ func NewExporter(dbEnvs []*dbEnvironment, metrics []*Metric) *Exporter {
 			Subsystem: exporter,
 			Name:      "last_scrape_duration_seconds",
 			Help:      "Duration of the last scrape of metrics from Oracle DB.",
-		}, []string{"env"}),
+		}, []string{"sid"}),
 		totalScrapes: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: exporter,
 			Name:      "scrapes_total",
 			Help:      "Total number of times Oracle DB was scraped for metrics.",
-		}, []string{"env"}),
+		}, []string{"sid"}),
 		scrapeErrors: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: exporter,
 			Name:      "scrape_errors_total",
 			Help:      "Total number of times an error occured scraping a Oracle database.",
-		}, []string{"env"}),
+		}, []string{"sid"}),
 		err: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: exporter,
 			Name:      "last_scrape_error",
 			Help:      "Whether the last scrape of metrics from Oracle DB resulted in an error (1 for error, 0 for success).",
-		}, []string{"env"}),
+		}, []string{"sid"}),
 		up: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Name:      "up",
 			Help:      "Whether the Oracle database server is up.",
-		}, []string{"env"}),
+		}, []string{"sid"}),
 		dbEnvs: dbEnvs,
 	}
 
@@ -166,21 +176,21 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 }
 
 func (e *Exporter) scrapeEnv(env *dbEnvironment, ch chan<- prometheus.Metric, wg *sync.WaitGroup) {
-	e.totalScrapes.WithLabelValues(env.name).Inc()
+	e.totalScrapes.WithLabelValues(env.sid).Inc()
 	var err error
 	defer func(start time.Time) {
-		e.duration.WithLabelValues(env.name).Set(time.Since(start).Seconds())
+		e.duration.WithLabelValues(env.sid).Set(time.Since(start).Seconds())
 		if err == nil {
-			e.err.WithLabelValues(env.name).Set(0)
+			e.err.WithLabelValues(env.sid).Set(0)
 		} else {
-			e.err.WithLabelValues(env.name).Set(1)
+			e.err.WithLabelValues(env.sid).Set(1)
 		}
 		wg.Done()
 	}(time.Now())
 
 	if err = env.db.Ping(); err != nil {
 		if strings.Contains(err.Error(), "sql: database is closed") {
-			log.Infof("reconnecting to DB SID: %s", env.name)
+			log.Infof("reconnecting to DB SID: %s", env.sid)
 			env.db, err = sql.Open("oci8", env.dsn)
 
 			// By design exporter should use maximum one connection per request.
@@ -190,18 +200,18 @@ func (e *Exporter) scrapeEnv(env *dbEnvironment, ch chan<- prometheus.Metric, wg
 			env.db.SetConnMaxLifetime(1 * time.Minute)
 
 			if err != nil {
-				log.Errorf("pinging oracle failed SID: %s connection string: %s, with error: %s", env.name, env.dsn, err)
+				log.Errorf("pinging oracle failed SID: %s connection string: %s, with error: %s", env.sid, env.dsn, err)
 				env.db.Close()
-				e.up.WithLabelValues(env.name).Set(0)
+				e.up.WithLabelValues(env.sid).Set(0)
 				return
 			}
 		}
 	}
 
-	e.up.WithLabelValues(env.name).Set(1)
+	e.up.WithLabelValues(env.sid).Set(1)
 	for _, metric := range e.metricsToScrap {
 		log.Debugf("scrape metric: %s", metric.Context)
-		if err = ScrapeMetric(env.name, env.db, ch, metric); err != nil {
+		if err = ScrapeMetric(env.sid, env.db, ch, metric); err != nil {
 			log.Errorln("error scraping for", metric.Context, ":", err)
 			e.scrapeErrors.WithLabelValues(metric.Context).Inc()
 		}
@@ -347,23 +357,70 @@ func cleanName(s string) string {
 }
 
 type dbEnvironment struct {
-	name string
-	dsn  string
-	db   *sql.DB
+	sid string
+	dsn string
+	db  *sql.DB
 }
 
-// system/blabla@docker.for.mac.localhost:1521/DINTDB
-func parseDSN(s string) ([]*dbEnvironment, error) {
+type credentials struct {
+	user     string
+	password string
+}
+
+func getParameter(ssmsvc *ssm.SSM, keyname *string) string {
+	withDecryption := true
+	param, err := ssmsvc.GetParameter(&ssm.GetParameterInput{
+		Name:           keyname,
+		WithDecryption: &withDecryption,
+	})
+	if err != nil {
+		log.Fatalf("failed to retrieve aws key: %s with: %s", *keyname, err)
+	}
+	return *param.Parameter.Value
+}
+
+const dsnFormat = "%s/%s@%s:%s/%s"
+
+func generateDSN(s string) ([]*dbEnvironment, error) {
 	var dbEnvs []*dbEnvironment
-	dsnEnvs := strings.Split(s, ",")
-	for _, env := range dsnEnvs {
-		parts := strings.Split(env, "/")
-		if len(parts) < 3 {
-			return nil, fmt.Errorf("unable to get oracle SID from data source environment: %s", env)
+	if s != "" {
+		// system/blabla@docker.for.mac.localhost:1521/DINTDB
+		dsnEnvs := strings.Split(s, ",")
+		for _, env := range dsnEnvs {
+			parts := strings.Split(env, "/")
+			if len(parts) < 3 {
+				return nil, fmt.Errorf("unable to get oracle SID from data source environment: %s", env)
+			}
+			oracleSID := parts[len(parts)-1]
+			log.Infof("found oracle SID: %s in connection string: %s", oracleSID, env)
+			dbEnvs = append(dbEnvs, &dbEnvironment{sid: oracleSID, dsn: env})
 		}
-		oracleSID := parts[len(parts)-1]
-		log.Infof("found oracle SID: %s in connection string: %s", oracleSID, env)
-		dbEnvs = append(dbEnvs, &dbEnvironment{name: oracleSID, dsn: env})
+		return dbEnvs, nil
+	}
+
+	sess, err := session.NewSessionWithOptions(session.Options{
+		Config:            aws.Config{Region: aws.String(*awsRegion)},
+		SharedConfigState: session.SharedConfigEnable,
+	})
+	if err != nil {
+		log.Fatalf("failed to create aws session with: %s", err)
+	}
+
+	ssmsvc := ssm.New(sess, aws.NewConfig().WithRegion(*awsRegion))
+
+	user := getParameter(ssmsvc, ssmUser)
+	pw := getParameter(ssmsvc, ssmPassword)
+	port := getParameter(ssmsvc, ssmPort)
+	sids := getParameter(ssmsvc, ssmSIDs)
+	host := getParameter(ssmsvc, ssmHost)
+
+	sidsList := strings.Split(sids, ",")
+	if len(sidsList) == 0 {
+		log.Fatalf("no sid defined in sid ssm parameter: %s", *ssmSIDs)
+	}
+	for _, sid := range sidsList {
+		dsn := fmt.Sprintf(dsnFormat, user, pw, host, port, sid)
+		dbEnvs = append(dbEnvs, &dbEnvironment{sid: sid, dsn: dsn})
 	}
 	return dbEnvs, nil
 }
@@ -373,7 +430,7 @@ func main() {
 	log.AddFlags(app)
 	app.Parse(os.Args[1:])
 	log.Infoln("starting oracledb_exporter " + Version)
-	dbEnvs, err := parseDSN(*dataSourceNames)
+	dbEnvs, err := generateDSN(*dataSourceNames)
 	if err != nil {
 		log.Fatalln(err)
 	}

@@ -1,50 +1,33 @@
-FROM golang:1.11 AS build
+FROM centos:7
 
-ARG ORACLE_VERSION
-ENV ORACLE_VERSION "${ORACLE_VERSION}"
+ENV ORACLE_VERSION "12.2"
 ENV LD_LIBRARY_PATH "/usr/lib/oracle/${ORACLE_VERSION}/client64/lib"
+ENV PATH "$PATH:/usr/local/go/bin"
 
-RUN apt-get -qq update && apt-get install --no-install-recommends -qq libaio1 rpm
+RUN yum -y install wget
+RUN wget https://dl.google.com/go/go1.13.4.linux-amd64.tar.gz
+RUN tar -C /usr/local -xzf go1.13.4.linux-amd64.tar.gz
+
+COPY oracle-instantclient* /
+RUN rpm -Uh --nodeps /oracle-instantclient*.x86_64.rpm && rm /*.rpm 
+
 COPY oci8.pc.template /usr/share/pkgconfig/oci8.pc
 RUN sed -i "s/@ORACLE_VERSION@/$ORACLE_VERSION/g" /usr/share/pkgconfig/oci8.pc
-COPY oracle*${ORACLE_VERSION}*.rpm /
-RUN rpm -Uh --nodeps /oracle-instantclient*.x86_64.rpm && rm /*.rpm
 RUN echo $LD_LIBRARY_PATH >> /etc/ld.so.conf.d/oracle.conf && ldconfig
+RUN yum -y install make automake gcc libaio
 
 WORKDIR /go/src/oracledb_exporter
 COPY . .
-RUN go get -d -v
 
 ARG VERSION
 ENV VERSION ${VERSION:-0.1.0}
 
 ENV PKG_CONFIG_PATH /go/src/oracledb_exporter
-ENV GOOS            linux
 
 RUN go build -v -ldflags "-X main.Version=${VERSION} -s -w"
 
-FROM ubuntu:18.04
-LABEL authors="Seth Miller,Yannig Perré"
-LABEL maintainer="Yannig Perré <yannig.perre@gmail.com>"
-
-ENV VERSION ${VERSION:-0.1.0}
-
-COPY oracle-instantclient*${ORACLE_VERSION}*basic*.rpm /
-
-RUN apt-get -qq update && \
-    apt-get -qq install --no-install-recommends -qq libaio1 rpm -y && rpm -Uvh --nodeps /oracle*${ORACLE_VERSION}*rpm && \
-    rm -f /oracle*rpm
-
-ENV LD_LIBRARY_PATH "/usr/lib/oracle/${ORACLE_VERSION}/client64/lib"
-RUN echo $LD_LIBRARY_PATH >> /etc/ld.so.conf.d/oracle.conf && ldconfig
-
-COPY --from=build /go/src/oracledb_exporter/oracledb_exporter /oracledb_exporter
-ADD ./default-metrics.toml /default-metrics.toml
-
-ENV DATA_SOURCE_NAME system/oracle@oracle/xe
-
-RUN chmod 755 /oracledb_exporter
-
-EXPOSE 9161
-
-ENTRYPOINT ["/oracledb_exporter"]
+#RUN chmod 755 /oracledb_exporter
+#
+#EXPOSE 9161
+#
+#ENTRYPOINT ["/oracledb_exporter"]
