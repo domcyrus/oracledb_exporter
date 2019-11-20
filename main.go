@@ -38,11 +38,12 @@ var (
 
 	// aws ssm related flags
 	awsRegion   = app.Flag("aws.region", "The aws region to use").Default("eu-central-1").String()
-	ssmUser     = app.Flag("ssm.user", "The ssm parameter to get the oracle user").Default("/shared-db/monitoring-user").String()
-	ssmPassword = app.Flag("ssm.password", "The ssm parameter to get the oracle password").Default("/shared-db/monitoring-password").String()
-	ssmPort     = app.Flag("ssm.port", "The ssm parameter to get the oracle port").Default("/shared-db/port").String()
-	ssmSIDs     = app.Flag("ssm.sids", "The ssm parameter to get the oracle sids comma separated list").Default("/shared-db/sids").String()
-	ssmHost     = app.Flag("ssm.host", "The ssm parameter to get the oracle host").Default("/shared-db/host").String()
+	ssmPrefix   = app.Flag("ssm.prefix", "The ssm parameter prefix").Required().String()
+	ssmUser     = app.Flag("ssm.user", "The ssm parameter to get the oracle user").Default("monitoring-user").String()
+	ssmPassword = app.Flag("ssm.password", "The ssm parameter to get the oracle password").Default("monitoring-password").String()
+	ssmPort     = app.Flag("ssm.port", "The ssm parameter to get the oracle port").Default("port").String()
+	ssmSIDs     = app.Flag("ssm.sids", "The ssm parameter to get the oracle sids comma separated list").Default("sids").String()
+	ssmHost     = app.Flag("ssm.host", "The ssm parameter to get the oracle host").Default("host").String()
 
 	queryTimeout = app.Flag("query.timeout", "Query timeout (in seconds).").Default("5").Int()
 )
@@ -368,9 +369,10 @@ type credentials struct {
 }
 
 func getParameter(ssmsvc *ssm.SSM, keyname *string) string {
+	key := fmt.Sprintf("/%s/%s", *ssmPrefix, *keyname)
 	withDecryption := true
 	param, err := ssmsvc.GetParameter(&ssm.GetParameterInput{
-		Name:           keyname,
+		Name:           &key,
 		WithDecryption: &withDecryption,
 	})
 	if err != nil {
@@ -428,7 +430,8 @@ func generateDSN(s string) ([]*dbEnvironment, error) {
 func main() {
 	app.Version(Version)
 	log.AddFlags(app)
-	app.Parse(os.Args[1:])
+	kingpin.MustParse(app.Parse(os.Args[1:]))
+
 	log.Infoln("starting oracledb_exporter " + Version)
 	dbEnvs, err := generateDSN(*dataSourceNames)
 	if err != nil {
