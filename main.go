@@ -17,7 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ssm"
 
-	_ "github.com/mattn/go-oci8"
+	//_ "github.com/mattn/go-oci8"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/log"
@@ -115,7 +115,7 @@ func NewExporter(dbEnvs []*dbEnvironment, metrics []*Metric) *Exporter {
 			Subsystem: exporter,
 			Name:      "scrape_errors_total",
 			Help:      "Total number of times an error occured scraping a Oracle database.",
-		}, []string{"sid"}),
+		}, []string{"collector", "sid"}),
 		err: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: exporter,
@@ -214,7 +214,7 @@ func (e *Exporter) scrapeEnv(env *dbEnvironment, ch chan<- prometheus.Metric, wg
 		log.Debugf("scrape metric: %s", metric.Context)
 		if err = ScrapeMetric(env.sid, env.db, ch, metric); err != nil {
 			log.Errorln("error scraping for", metric.Context, ":", err)
-			e.scrapeErrors.WithLabelValues(metric.Context).Inc()
+			e.scrapeErrors.WithLabelValues(env.sid, metric.Context).Inc()
 		}
 	}
 }
