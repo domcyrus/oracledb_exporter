@@ -214,7 +214,7 @@ func (e *Exporter) scrapeEnv(env *dbEnvironment, ch chan<- prometheus.Metric, wg
 		log.Debugf("scrape metric: %s", metric.Context)
 		if err = ScrapeMetric(env.sid, env.db, ch, metric); err != nil {
 			log.Errorln("error scraping for", metric.Context, ":", err)
-			e.scrapeErrors.WithLabelValues(env.sid, metric.Context).Inc()
+			e.scrapeErrors.WithLabelValues(metric.Context, env.sid).Inc()
 		}
 	}
 }
