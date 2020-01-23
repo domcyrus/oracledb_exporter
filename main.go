@@ -194,18 +194,18 @@ func (e *Exporter) scrapeEnv(env *dbEnvironment, ch chan<- prometheus.Metric, wg
 			log.Infof("reconnecting to DB SID: %s", env.sid)
 			env.db, err = sql.Open("oci8", env.dsn)
 
-			// By design exporter should use maximum one connection per request.
-			env.db.SetMaxOpenConns(1)
-			env.db.SetMaxIdleConns(1)
-			// Set max lifetime for a connection.
-			env.db.SetConnMaxLifetime(1 * time.Minute)
-
 			if err != nil {
 				log.Errorf("pinging oracle failed SID: %s connection string: %s, with error: %s", env.sid, env.dsn, err)
 				env.db.Close()
 				e.up.WithLabelValues(env.sid).Set(0)
 				return
 			}
+
+			// By design exporter should use maximum one connection per request.
+			env.db.SetMaxOpenConns(1)
+			env.db.SetMaxIdleConns(1)
+			// Set max lifetime for a connection.
+			env.db.SetConnMaxLifetime(2 * time.Minute)
 		}
 	}
 
@@ -246,9 +246,21 @@ func ScrapeMetric(env string, db *sql.DB, ch chan<- prometheus.Metric, metricDef
 		metricDefinition.Request)
 }
 
+const oracleDate = "2006/01/02:15:04:05"
+
 // ScrapeGenericValues generic method for retrieving metrics.
-func ScrapeGenericValues(env string, db *sql.DB, ch chan<- prometheus.Metric, context string, labels []string,
-	metricsDesc map[string]string, metricsType map[string]string, fieldToAppend string, ignoreZeroResult bool, request string) error {
+func ScrapeGenericValues(
+	env string,
+	db *sql.DB,
+	ch chan<- prometheus.Metric,
+	context string,
+	labels []string,
+	metricsDesc map[string]string,
+	metricsType map[string]string,
+	fieldToAppend string,
+	ignoreZeroResult bool,
+	request string,
+) error {
 	log.Debugln("scrape generic values")
 	var metricsCount int
 	genericParser := func(row map[string]string) error {
@@ -264,7 +276,13 @@ func ScrapeGenericValues(env string, db *sql.DB, ch chan<- prometheus.Metric, co
 			value, err := strconv.ParseFloat(strings.TrimSpace(row[metric]), 64)
 			// If not a float, skip current metric
 			if err != nil {
-				continue
+				// check if it is an oracle date string
+				// 2020/01/23:16:00:03 using timezone of the box
+				t, err := time.Parse(oracleDate, strings.TrimSpace(row[metric]))
+				if err != nil {
+					continue
+				}
+				value = float64(t.Unix())
 			}
 			// If metric do not use a field content in metric's name
 			if strings.Compare(fieldToAppend, "") == 0 {
