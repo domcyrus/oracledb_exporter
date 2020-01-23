@@ -20,7 +20,7 @@ WORKDIR /go/src/oracledb_exporter
 COPY . .
 
 ARG VERSION
-ENV VERSION ${VERSION:-0.3.0}
+ENV VERSION ${VERSION:-0.4.0}
 
 ENV PKG_CONFIG_PATH /go/src/oracledb_exporter
 
