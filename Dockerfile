@@ -6,7 +6,7 @@ ENV PATH "$PATH:/usr/local/go/bin"
 
 RUN yum -y install wget
 RUN wget https://dl.google.com/go/go1.13.4.linux-amd64.tar.gz
-RUN tar -C /usr/local -xzf go1.13.4.linux-amd64.tar.gz
+RUN tar -C /usr/local -xzf go1.13.6.linux-amd64.tar.gz
 
 COPY oracle-instantclient* /
 RUN rpm -Uh --nodeps /oracle-instantclient*.x86_64.rpm && rm /*.rpm 
